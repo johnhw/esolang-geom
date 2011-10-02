@@ -2,9 +2,20 @@
 ## J. Williamson 2011
 ## Distributed in the public domain.
 
-import sys, os
+import sys, os, random
 from xml.etree import ElementTree as et    
-from math import sqrt, atan2, pi, floor
+try:
+    # use symbolic solver if it's available
+    from sympy import Rational, sqrt, atan2, pi    
+    symbolic = True
+except ImportError:
+    print "You don't have SymPy (http://sympy.org) installed. Falling back to floating point solver."
+    # use float solver if no sympy
+    from math import sqrt, atan2, pi
+    def Rational(x):
+        return x
+    symbolic = False
+
 
 def length(start, end):
     return sqrt((start[0]-end[0])*(start[0]-end[0])+(start[1]-end[1])*(start[1]-end[1]))
@@ -44,8 +55,7 @@ def full_line_intersect(p1, p2, p3, p4):
     
     ua = ua_nom / denom
     ub = ub_nom / denom
-    
-    
+        
     x = p1[0]+ua*(p2[0]-p1[0])
     y = p1[1]+ua*(p2[1]-p1[1])
     return [(x,y)]
@@ -220,7 +230,6 @@ class SVGOutput(object):
     # add to the text to be drawn at the current point
     def text(self, pt, c):
         # quantize pt
-        pt = (int(pt[0] * 1000) / 1000.0, int(pt[1] * 1000) / 1000.0)        
         if not c.startswith('_'):
             self.pt_texts[pt] = self.pt_texts.get(pt, "") + c + " "
         
@@ -348,7 +357,7 @@ class SVGOutput(object):
                     
                 if pt[1]>maxy:
                     maxy=pt[1]
-        return [minx, maxx, miny, maxy]
+        return [float(x) for x in [minx, maxx, miny, maxy]]
                     
         
     def write(self, filename="output"):
@@ -372,7 +381,7 @@ class SVGOutput(object):
         # now points
         for element in self.elements:         
             # draw point
-            pts = [(scale*(p[0]-center[0]), scale*(p[1]-center[1])) for p in element.pts]
+            pts = [(float(scale*(p[0]-center[0])), float(scale*(p[1]-center[1]))) for p in element.pts]
             if element.type==SVGElement.point and element.debug:                            
                 r = 15
                 et.SubElement(doc, 'circle', cx=str(pts[0][0]), cy=str(pts[0][1]), r=str(r), fill='rgb(255,0,0)')            
@@ -387,7 +396,7 @@ class SVGOutput(object):
                 stroke = "stroke: %s; stroke-width: %s" % (stroke, stroke_width)
                     
                 # shift points by canvas offset
-                pts = [(scale*(p[0]-center[0]), scale*(p[1]-center[1])) for p in element.pts]
+                pts = [(float(scale*(p[0]-center[0])), float(scale*(p[1]-center[1]))) for p in element.pts]
                 
                 # draw circle            
                 if element.type==SVGElement.circle:                            
@@ -413,7 +422,7 @@ class SVGOutput(object):
  
                 stroke = "stroke: %s; stroke-width: %s" % (stroke, stroke_width)
                 # shift points by canvas offset
-                pts = [(scale*(p[0]-center[0]), scale*(p[1]-center[1])) for p in element.pts]
+                pts = [(float(scale*(p[0]-center[0])), float(scale*(p[1]-center[1]))) for p in element.pts]
                 
                 # draw circle            
                 if element.type==SVGElement.circle:                            
@@ -439,7 +448,7 @@ class SVGOutput(object):
         
         # text last
         for element in self.elements:         
-            pts = [(scale*(p[0]-center[0]), scale*(p[1]-center[1])) for p in element.pts]
+            pts = [(float(scale*(p[0]-center[0])), float(scale*(p[1]-center[1]))) for p in element.pts]
             # draw text
             if element.type==SVGElement.text:                                            
                 text = et.Element('text', x=str(pts[0][0]+20), y=str(pts[0][1]+20), fill='gray', style='font-family:Sans;font-size:72pt;text-anchor:center;dominant-baseline:middle')
@@ -466,32 +475,64 @@ class Geom:
         self.pt2 = pt2
         
 
-
+class Nil:
+    def __init__(self):
+        self.uid = random.getrandbits(64)
+        
+    def __hash__(self):
+        return self.uid
+        
+    def __eq__(self, object):
+        return isinstance(object, Nil) and self.uid == object.uid
+    
+    def __ne__(self, object):
+    
+        return not isinstance(object, Nil) or self.uid != object.uid
+        
+    def __repr__(self):
+        return "nil"
+        
+    def __str__(self):
+        return "nil"
+        
+    def __nonzero__(self):
+        return False
+        
+    
+def quantize(pt):
+    """Quantize a point so that it falls exactly on a grid line"""
+    eps = 1e5
+    if isinstance(pt, Nil):
+        return pt
+    else:
+        x, y = pt
+        x = floor(x * eps+0.5)/float(eps)
+        y = floor(y * eps+0.5)/float(eps)
+        return (x,y)
+        
     
 class GeomLang:
-    def __init__(self, code, filename="output.pdf", debug=False):
+    def __init__(self, code, filename, debug=False):
 
         # initialise stack
-        self.stack = [(0,0), (1,0)]
+        self.stack = [(Rational(0),Rational(0)), (Rational(1),Rational(0))]
         self.dictionary = {}
         self.dictionaries = []
+        self.continuation = {}
+        self.continuations = []
+        
         self.debug = debug
         self.eps = 1e-4
-        self.inv_eps = 1e5
-        Geom.circle = 0
-        Geom.line = 1
-        
+                
         # create the output function 
-        self.output = SVGOutput()
-        
+        self.output = SVGOutput()        
         self.geoms = []
         
         for pt in self.stack:
             if pt:
                 self.output.point(pt)
         # start parsing
-        self.parse(code.split())
-                
+        self.parse(code.split())                
         self.output.write(filename=filename)
         
                
@@ -517,7 +558,7 @@ class GeomLang:
                 intersections = line_circle_intersect(c,d,a,b)
                 
             if f.type==Geom.circle and s.type==Geom.circle:            
-                if length(a,b)<self.eps:
+                if not symbolic and length(a,b)<self.eps:
                     # don't interesect circles < eps apart!
                     intersections=[]
                 else:
@@ -529,39 +570,41 @@ class GeomLang:
             
             # fill any remaining gaps
             if len(intersections)==1:
-                self.push(None)
+                self.push(Nil())
                 
             if len(intersections)==0:
-                self.push(None)
-                self.push(None)
+                self.push(Nil())
+                self.push(Nil())
         else:
-            self.push(None)
-            self.push(None)
+            self.push(Nil())
+            self.push(Nil())
                 
-    
-    def is_nil(self):
-        v = self.pop()
-        return v==None     
+         
                 
-    def push(self, pt):
-            
+    def push(self, pt):        
+        if not symbolic:
+            pt = quantize(pt)
         self.stack.append(pt)
+        
         
     def pop(self):
         
         if len(self.stack)>0:
-            return self.stack.pop()
-        else: 
-            return None
+            p = self.stack.pop()
+            if not symbolic:
+                return quantize(p)
+            else:
+                return p
             
-    
-    
-        
+        else: 
+            return Nil()
+            
+                
     def draw_arc(self):
         p1 = self.pop()
         p2 = self.pop()
         p3 = self.pop()
-        if p1!=None and p2!=None and p3!=None:
+        if p1 and p2 and p3:
             
             if length(p1,p3)<self.eps:                                
                 self.output.circle(p1, p2, debug=False)
@@ -607,122 +650,156 @@ class GeomLang:
             # circle
             if token=='@':
                self.circle()
-               
-                            
-               
+                              
             # line
             elif token=='/':
                 self.line()
-               
-                
+                 
+            # raw token
+            elif isinstance(token, (Nil, tuple)):
+                self.push(token)
+             
             # define
-            elif token==':':  
-               
-                name = tokens.pop(0)
+            elif token=='(':                 
+                pt = self.pop()                
                 defn = []
                                 
                 cnt = 1
                 while cnt!=0:         
                     if len(tokens)==0:
-                        print "%s definition missing terminating ; " % name
+                        print "%s definition missing terminating ) " % name
                         sys.exit(-1)
+                    
+                    token = tokens.pop(0)                                                            
+                    if token=='(':
+                        cnt = cnt + 1
+                    if token==')':
+                        cnt = cnt - 1                                            
                         
-                    token = tokens.pop(0)                    
-                    if token==';':
-                        cnt = cnt - 1
-                    if token==':':
-                        cnt = cnt + 1                                            
-                    defn.append(token)                    
+                    if cnt==1 and token=='^':
+                        p = self.pop()                        
+                        defn.append(p)
+                    else:
+                        defn.append(token)                    
                 
-                self.dictionary[name] = defn                
+                self.dictionary[pt] = defn[0:-1]
+                self.push(pt)
             
-            elif token in ']|;':
-                # ignore
-                pass
-            
+                
             # variable
             elif token=='>':               
                 name = tokens.pop(0)                                                                
                 p1 = self.pop()
-                if not p1:
-                    self.dictionary[name] = 'nil'
-                else:
-                    self.dictionary[name] = p1
+                
+                self.dictionary[name] = p1
                 if self.debug and p1:
                     self.output.text(p1, name)
                 
             # conditional
-            elif token=='[':               
-                cnt = 1
+            elif token=='?':               
+                p1 = self.pop()
+                p2 = self.pop()
+                p3 = self.pop()
                 
-                true, false = [], []
-                in_true = True
-                while cnt!=0:                    
-                    token = tokens.pop(0)
-                    # true/false divider
-                                                
-                    # nested if                    
-                    if token=='[':
-                        cnt = cnt + 1
-                    if token==']':
-                        cnt = cnt - 1
-                    if cnt==1 and token=='|':
-                        in_true = False                                            
-                    
-                    if in_true:
-                        true.append(token)
-                    else:
-                        false.append(token)
-                        
-                               
-                if self.is_nil():
-                    self.parse(false)
-               
+                if p3:
+                    self.push(p1)
                 else:
-                    self.parse(true)
-               
-                
-            # ignore spare ]
-            elif token==']':
-                pass
+                    self.push(p2)
+                                                 
             
-                
+            elif token=='*':
+                p1 = self.pop()
             
+                code = self.dictionary.get(p1, [])
                 
+                # preserve state
+                self.dictionaries.append(self.dictionary)                    
+                self.dictionary = dict(self.dictionary)                                                                        
+                self.continuations.append(self.continuation)
+                self.continuation = dict(self.continuation)                                                                        
+                
+                # replace with current continuation if there is one
+                code,context = self.continuation.get(p1, (code, (self.dictionary, self.contiunation)))
+                self.dictionary = context[0]
+                self.continuation = context[1]
+                                
+                continuation = self.parse(list(code))
+                
+                # restore state
+                self.dictionary = self.dictionaries.pop()                        
+                self.continuation = self.continuations.pop()                        
+                
+                # record continuation
+                if continuation:
+                    self.continuation[p1] = continuation
+                else:
+                    if self.continuation.has_key(p1):
+                        del self.continuation[p1] 
+                    
+            # draw 
             elif token=='-':              
                 self.draw_arc()
                 
-            elif token=='.':
+            # yield
+            elif token=='|':              
+                continuation = tokens
+                return continuation, (dict(self.dictionary), dict(self.context))
+            
+            # print stack
+            elif token=='.':                
+                
                 for elt in self.stack:
-                    if elt:
-                        print "[%.02f, %.02f]" % elt,
+                    if isinstance(elt,tuple):
+                        print "[%.02f, %.02f]" % (elt[0], elt[1])
                     else:
-                        print "nil",
-                    
+                        print elt,                    
                 print "<<"
+            
+            # print dictionary
+            elif token=='!':
+                print "--- Dictionary ---"
+                for key in self.dictionary:
+                    if isinstance(key, str):
+                        s = self.dictionary.get(self.dictionary[key], "")
+                        print "%s : %s -> %s" % (key, self.dictionary[key], s)
+                    else:
+                        print "%s : %s" % (key, self.dictionary[key])
+                    
+                print "--- Continuations ---"
+                for key in self.continuation:
+                    print "%s : %s" % (key, self.continuation[key])
+                
+                
+            # print string
+            elif token=='"':
+                cnt = 1
+                old_tokens = list(tokens)
+                quoted = []
+                while cnt!=0:         
+                    if len(tokens)==0:
+                        print "Mismatched quotes %s"  %old_tokens
+                        sys.exit(-1)                    
+                    token = tokens.pop(0)                                                                                
+                    if token=='"':
+                        cnt = cnt - 1                                            
+                    else:
+                        quoted.append(token)
+                        
+                print " ".join(quoted)
+            
+                
                 
             # lookup in dictionary
             else:
-                v = self.dictionary.get(token, None)
-                
-                if v:                    
-                    # definition
-                    if type(v)==type([]):                        
-                        # scope                        
-                        self.dictionaries.append(self.dictionary)
-                        self.dictionary = dict(self.dictionary)                                                                                                
-                        self.parse(list(v))                        
-                        self.dictionary = self.dictionaries.pop()                        
-                    else:                        
-                        if v=='nil':
-                            self.push(None)
-                        else:
-                            self.push(v)
+                v = self.dictionary.get(token, None)                                
+                if v!=None:
                     
+                    self.push(v)
+                        
     
 if __name__=="__main__":
     if len(sys.argv)<2:
-        print "Usage: geom.py <file.geom> [-d]"
+        print "Usage: geomplusplus.py <file.geom> [-d]"
     else:
         filename = sys.argv[1]
         debug = False
@@ -744,9 +821,4 @@ if __name__=="__main__":
             
                    
         
-        
- 
-
- 
- 
-        
+    
