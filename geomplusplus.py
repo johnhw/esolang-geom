@@ -2,7 +2,7 @@
 ## J. Williamson 2011
 ## Distributed in the public domain.
 
-import sys, os, random
+import sys, os, random, threading
 from optparse import OptionParser
    
 
@@ -57,10 +57,38 @@ class Nil:
         
     
         
+def split_indices(text):
+    # split text into space separated tokens
+    # along with the indices of those tokens
+    text = text.strip()
+    cur = 0
+    tokens = []
+    
+    text = text.replace("\n", " ")
+    text = text.replace("\t", " ")
+    indices = []
+    while 1:
+        end = text.find(' ',cur)                        
+        token = text[cur:end].strip()     
+        if end==-1:
+            break                    
+        if len(token)>0:
+            indices.append((cur,end))
+            tokens.append(token)        
+        cur = end+1
+      
+    
+    token = text[cur:].strip()     
+    if len(token)>0:
+        indices.append((cur,end))
+        tokens.append(token)                        
+    return zip(tokens, indices)
+            
+                       
+        
     
 class GeomLang:
     def __init__(self, code, filename, debug=False, interactive=False):
-
         # initialise stack
         self.stack = [(Rational(0),Rational(0)), (Rational(1),Rational(0))]
         self.dictionary = {}
@@ -68,23 +96,34 @@ class GeomLang:
         self.dictionaries = []
         self.continuation = {}
         self.continuations = []
-        
+        self.current_tag_point = Nil()
         self.debug = debug
         self.eps = 1e-4
-                
+        
+        self.code = code        
         # create the output function 
-        self.output = SVGOutput()        
-        if self.interactive:
-            self.interactive_output = TKOutput()
-           
+        self.output = SVGOutput()                
+        self.current_highlight = [0,0]               
             
         self.geoms = []
         
         for pt in self.stack:
             if pt:
                 self.output.point(pt)
-        # start parsing
-        self.parse(code.split())                
+                
+        
+        tokens = split_indices(self.code)
+        
+        if self.interactive:
+            # start the parser in another thread
+            self.condition = threading.Condition()
+            parse_thread = threading.Thread(target=self.parse, args=(tokens,),kwargs={"condition" : self.condition})
+            parse_thread.start()
+            self.interactive_output = TKOutput(self)
+        else:
+            self.parse(tokens)
+            
+                
         self.output.write(filename=filename)
         
                
@@ -146,8 +185,7 @@ class GeomLang:
             if not symbolic:
                 return quantize(p)
             else:
-                return p
-            
+                return p            
         else: 
             return Nil()
             
@@ -180,8 +218,6 @@ class GeomLang:
             if self.debug:
                 self.output.circle(p1, p2)
         
-            
-        
         
     def line(self):
         p1 = self.pop()
@@ -192,13 +228,26 @@ class GeomLang:
             if self.debug:
                 self.output.inf_line(p1, p2)
             
-    # parse the entire string
-    def parse(self,tokens):
-        
-        while len(tokens)>0:
             
-            token = tokens.pop(0)
-                        
+    def step(self):
+        self.condition.acquire()
+        self.condition.notify()
+        self.condition.release()
+        
+    
+    # parse the entire string
+    def parse(self,tokens, condition=None):                
+        while len(tokens)>0:            
+            token,index = tokens.pop(0)
+            
+            # wait for gui if we need to 
+            if condition:
+                condition.acquire()
+                condition.wait()
+                condition.release()
+            
+            self.current_highlight = index
+            
             # circle
             if token=='@':
                self.circle()
@@ -222,7 +271,7 @@ class GeomLang:
                         print "%s definition missing terminating ) " % name
                         sys.exit(-1)
                     
-                    token = tokens.pop(0)                                                            
+                    token,index = tokens.pop(0)                                                            
                     if token=='(':
                         cnt = cnt + 1
                     if token==')':
@@ -240,7 +289,7 @@ class GeomLang:
                 
             # variable
             elif token=='>':               
-                name = tokens.pop(0)                                                                
+                name,index = tokens.pop(0)                                                                
                 p1 = self.pop()
                 
                 self.dictionary[name] = p1
@@ -261,6 +310,7 @@ class GeomLang:
             
             elif token=='*':
                 p1 = self.pop()
+                self.current_tag_point = p1
             
                 code = self.dictionary.get(p1, [])
                 
@@ -331,7 +381,7 @@ class GeomLang:
                     if len(tokens)==0:
                         print "Mismatched quotes %s"  %old_tokens
                         sys.exit(-1)                    
-                    token = tokens.pop(0)                                                                                
+                    token, index = tokens.pop(0)                                                                                
                     if token=='"':
                         cnt = cnt - 1                                            
                     else:
@@ -344,9 +394,9 @@ class GeomLang:
             # lookup in dictionary
             else:
                 v = self.dictionary.get(token, None)                                
-                if v!=None:
-                    
+                if v!=None:                    
                     self.push(v)
+        
                         
     
 def start_geom():

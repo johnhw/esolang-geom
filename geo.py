@@ -224,6 +224,7 @@ def get_bounded_inf_lines(bbox, p1, p2, border=0.1):
     
     if iright!=[] and iright[0][1]>=y1 and iright[0][1]<=y2:                              
         pts.append(iright[0])
+     
         
     return pts
 
