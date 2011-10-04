@@ -3,7 +3,9 @@
 ## Distributed in the public domain.
 
 import sys, os, random
-from xml.etree import ElementTree as et    
+from optparse import OptionParser
+   
+
 try:
     # use symbolic solver if it's available
     from sympy import Rational, sqrt, atan2, pi    
@@ -16,454 +18,9 @@ except ImportError:
         return x
     symbolic = False
 
-
-def length(start, end):
-    return sqrt((start[0]-end[0])*(start[0]-end[0])+(start[1]-end[1])*(start[1]-end[1]))
-           
-def normal(v):
-    return (-v[1], v[0])
-    
-def normalize(v):
-    m = length((0,0),v)
-    return (v[0]/m, v[1]/m)
-    
-def sub(a,b):
-    return (b[0]-a[0], b[1]-a[1])
-
-def add(a,b):
-    return (a[0]+b[0], a[1]+b[1])
-
-    
-def dot(v1,v2):
-    return v1[0]*v2[0]+v1[1]*v2[1]
-
-# interesection point of two lines
-def full_line_intersect(p1, p2, p3, p4):
-    denom = (p4[1]-p3[1])*(p2[0]-p1[0]) - (p4[0]-p3[0])*(p2[1]-p1[1])        
-    if denom==0:
-        return []
-        
-    ua_nom =(p4[0]-p3[0])*(p1[1]-p3[1]) - (p4[1]-p3[1])*(p1[0]-p3[0])
-    ub_nom =(p2[0]-p1[0])*(p1[1]-p3[1]) - (p2[1]-p1[1])*(p1[0]-p3[0])
-    
-    #return none if coincident
-    if ua_nom == 0:            
-        return []
-    if ub_nom == 0:
-        return []
-    
-    
-    ua = ua_nom / denom
-    ub = ub_nom / denom
-        
-    x = p1[0]+ua*(p2[0]-p1[0])
-    y = p1[1]+ua*(p2[1]-p1[1])
-    return [(x,y)]
-    
-    
-
-
-# line circle intersection (points are line p1->p2, circle centered p3, p4 on radius)  
-def line_circle_intersect(p1, p2, p3, p4):
-    r = sqrt((p3[0]-p4[0])*(p3[0]-p4[0])+(p3[1]-p4[1])*(p3[1]-p4[1]))
-    
-    a = (p2[0]-p1[0])*(p2[0]-p1[0])+(p2[1]-p1[1])*(p2[1]-p1[1])
-    b = 2 * ((p2[0]-p1[0])*(p1[0]-p3[0])+(p2[1]-p1[1])*(p1[1]-p3[1]))
-    c = p3[0]*p3[0] + p3[1]*p3[1] + p1[0]*p1[0]+p1[1]*p1[1] - 2 * (p3[0]*p1[0]+p3[1]*p1[1]) - r*r
-    
-    
-    det = b*b-4*a*c
-    if det<0 or a==0.0:
-        return []
-        
-    if det==0:
-        u = -b/(2*a)
-        x = p1[0]+u*(p2[0]-p1[0])
-        y = p1[1]+u*(p2[1]-p1[1])
-        return [(x,y)]
-        
-    if det>0:
-          u = (-b + sqrt(b*b - 4*a*c )) / (2*a)
-          x1 = p1[0]+u*(p2[0]-p1[0])
-          y1 = p1[1]+u*(p2[1]-p1[1])
-          u = (-b - sqrt(b*b - 4*a*c )) / (2*a);
-          x2 = p1[0]+u*(p2[0]-p1[0])
-          y2 = p1[1]+u*(p2[1]-p1[1])
-          
-          pts = [(x1,y1), (x2,y2)]
-          
-          # sort according to direction and distance
-          # direction first, then nearest if both same
-          
-          # get vector
-          l1 = length(p1, (x1,y1))
-          l2 = length(p1, (x2,y2))
-          
-          # distance order
-          if l1<l2:
-            pts = [(x1,y1), (x2,y2)]
-          else:
-            pts = [(x2,y2), (x1,y1)]
-            
-          # return immediately if points are co-located
-          if l1==0 or l2==0:            
-            return pts
-          
-          v1 = normalize(sub(p1, p2))
-          v2 = normalize(sub(p1, (x1,y1)))
-          v3 = normalize(sub(p1, (x2,y2)))
-          dp1 = dot(v1,v2)
-          dp2 = dot(v1,v3)
-        
-          
-          # now re-order if direction is wrong
-          # i.e make sure we return always the point in the direction
-          # the ray is facing first, if there is one
-          if dp1>0 and dp1<0:
-            pts = [(x1,y1), (x2,y2)]
-          if dp1<0 and dp1>0:
-            pts = [(x2,y2), (x1,y1)]
-            
-          
-          
-          return pts
-                                  
-
-# return intersection of circles
-def circle_circle_intersect(p1, p2, p3, p4):
-        r0 = sqrt((p1[0]-p2[0])*(p1[0]-p2[0]) + (p1[1]-p2[1])*(p1[1]-p2[1]))
-        r1 = sqrt((p3[0]-p4[0])*(p3[0]-p4[0]) + (p3[1]-p4[1])*(p3[1]-p4[1]))
-        d = sqrt((p1[0]-p3[0])*(p1[0]-p3[0])+(p1[1]-p3[1])*(p1[1]-p3[1]))
-        
-        if d>r0+r1:
-            return []
-            
-        if d<r0-r1:
-            return []
-            
-        if d==0:
-            return [] 
-            
-        a = (r0*r0 - r1*r1 + d*d) / (2*d)
-        
-        if a==0.0:
-            return []
-            
-        if r0*r0-a*a<=0.0:
-            return []
-            
-        
-        x2 = p1[0] + (p3[0]-p1[0])*(a/d)
-        y2 = p1[1] + (p3[1]-p1[1])*(a/d)
-        
-        
-        h = sqrt((r0*r0) - (a*a))
-        rx = -(p3[1]-p1[1]) * (h/d)
-        ry = (p3[0]-p1[0]) * (h/d)
-        
-        xa = x2+rx
-        xb = x2-rx
-        ya = y2+ry
-        yb = y2-ry
-        
-        if xa==xb and ya==yb:
-            return [(xa,ya)]
-        
-        # now sort so that the first intersection is always clockwise
-        # from the line joining the centres (wrt the first centre)
-        cline = normal(normalize(sub(p1,p3)))
-        aline = normalize(sub(p1,(xa,ya)))
-        bline = normalize(sub(p1,(xb,yb)))
-        
-        dp1 = dot(cline, aline)
-        dp2 = dot(cline, bline)
-        
-        if dp1<0 and dp2>0:
-            return [(xb,yb), (xa,ya)]
-        else:
-            return [(xa,ya), (xb, yb)]
-                
-
-                
-# return true if p1 is inside circle from p2 to p2
-def circle_inside(p1, p2, p3):
-    r = length(sub(p2,p3))
-    d = length(sub(p1,p2))
-    return d<=r
-    
-    
-# return true if p1 is left of p2->p3
-def line_inside(p1, p2, p3):
-        cline = normal(normalize(sub(p2,p3)))
-        aline = normalize(sub(p2,p1))        
-        dp1 = dot(cline, aline)        
-        return dp1>0
-
-                
-
-
-
-        
-
-class SVGElement(object):
-    circle = 0
-    line = 1
-    text = 2
-    arc = 3
-    point = 4
-    def __init__(self, type, pts, debug=False, text=""):
-        self.type = type
-        self.pts = pts
-        self.text = text
-        self.debug = debug
-
-class SVGOutput(object):
-    def __init__(self):
-        self.elements = []
-        self.pt_texts = {}
-        self.inf_lines = []
-        
-    def textnow(self, p1, t):                
-        self.elements.append(SVGElement(type=SVGElement.text, pts=[p1], text=t))
-                
-        
-    # add to the text to be drawn at the current point
-    def text(self, pt, c):
-        # quantize pt
-        if not c.startswith('_'):
-            self.pt_texts[pt] = self.pt_texts.get(pt, "") + c + " "
-        
-        
-    def point(self, p1, debug=False):                
-        self.elements.append(SVGElement(type=SVGElement.point, pts=[p1], debug=debug))
-                           
-        
-    def circle(self, p1, p2, debug=True):                   
-        self.elements.append(SVGElement(type=SVGElement.circle, pts=[p1, p2], debug=debug))
-        
-        
-    def line(self, p1, p2, debug=False):           
-        self.elements.append(SVGElement(type=SVGElement.line, pts=[p1, p2], debug=debug))
-        
-        
-    def arc(self, p1, p2, p3):
-        l = length(p1, p2)
-        v1 = sub(p1, p2)
-        v2 = sub(p1, p3)
-        
-        a1 = atan2(v1[1], v1[0])
-        a2 = atan2(v2[1], v2[0])
-        
-        self.elements.append(SVGElement(type=SVGElement.arc, pts=[p1, p2], debug=False))
-                
-        
-        
-    def inf_line(self, p1, p2):           
-        self.inf_lines.append((p1, p2))
-        
-    
-    def write_text(self): 
-        for pt in self.pt_texts.keys():
-            self.textnow(pt, self.pt_texts[pt])
-                        
-            
-    def draw_inf_lines(self):
-        bbox = self.get_bbox()
-        
-        bboxscale = 0.1
-        
-        
-        y1 = bbox[2]-(bbox[3]-bbox[2])*bboxscale
-        y2 =bbox[3]+(bbox[3]-bbox[2])*bboxscale
-        x1= bbox[0]-(bbox[1]-bbox[0])*bboxscale
-        x2 = bbox[1]+(bbox[1]-bbox[0])*bboxscale
-        
-        
-        # get bounding box lines
-        topline = ((x1,y1), (x2,y1))
-        bottomline = ((x1,y2), (x2,y2))
-        leftline = ((x1,y1), (x1,y2))
-        rightline = ((x2,y1), (x2,y2))
-              
-        
-        for line in self.inf_lines:
-            pts = []
-                    
-            
-            # get edge intersection
-            itop = full_line_intersect(line[0], line[1], topline[0], topline[1])
-            ibottom = full_line_intersect(line[0], line[1], bottomline[0], bottomline[1])
-            ileft = full_line_intersect(line[0], line[1], leftline[0], leftline[1])
-            iright = full_line_intersect(line[0], line[1], rightline[0], rightline[1])
-            
-            
-     
-            # ok, which lines are possible
-            if itop!=[] and itop[0][0]>=x1 and itop[0][0]<=x2:
-                
-                pts.append(itop[0])
-                
-            if ibottom!=[] and ibottom[0][0]>=x1 and ibottom[0][0]<=x2:
-                
-                pts.append(ibottom[0])
-                
-            
-            if ileft!=[] and ileft[0][1]>=y1 and ileft[0][1]<=y2:                
-                pts.append(ileft[0])
-            
-            if iright!=[] and iright[0][1]>=y1 and iright[0][1]<=y2:                              
-                pts.append(iright[0])
-                
-            if len(pts)>1:
-                self.line(pts[0], pts[1], debug=True)
-            
-            
-    def get_bbox(self): 
-        minx = 1e6
-        maxx = -1e6
-        miny = 1e6
-        maxy = -1e6
-        for element in self.elements:
-        
-            pts = element.pts
-            # for circles, we need to compute radius
-            if element.type==SVGElement.circle or element.type==SVGElement.arc:
-                r = length(pts[0], pts[1])                
-                x1 = add(pts[0], (-r,0))
-                x2 = add(pts[0], (r,0))
-                y1 = add(pts[0], (0,-r))
-                y2 = add(pts[0], (0,r))
-                
-                if x1[0]<minx:
-                    minx=x1[0]
-                if x2[0]>maxx:
-                    maxx=x2[0]
-                if y1[1]<miny:
-                    miny=y1[1]                    
-                if y2[1]>maxy:
-                    maxy=y2[1]
-                
-
-            # compute bound of all points
-            for pt in pts:
-                if pt[0]<minx:
-                    minx=pt[0]
-                    
-                if pt[0]>maxx:
-                    maxx=pt[0]
-                    
-                if pt[1]<miny:
-                    miny=pt[1]
-                    
-                if pt[1]>maxy:
-                    maxy=pt[1]
-        return [float(x) for x in [minx, maxx, miny, maxy]]
-                    
-        
-    def write(self, filename="output"):
-        self.write_text()
-        self.draw_inf_lines()
-        
-        bbox = self.get_bbox()
-        
-        scale = 1000
-        x_extent = (bbox[1] - bbox[0])
-        y_extent = (bbox[3] - bbox[2])
-        
-        
-        center = (bbox[0], bbox[2])
-        doc = et.Element('svg', width=str(x_extent*scale), height=str(y_extent*scale), version='1.1', xmlns='http://www.w3.org/2000/svg')
-        
-        title = et.Element( "title")
-        title.text ="Geom output for %s" % filename
-        doc.append(title)
- 
-        # now points
-        for element in self.elements:         
-            # draw point
-            pts = [(float(scale*(p[0]-center[0])), float(scale*(p[1]-center[1]))) for p in element.pts]
-            if element.type==SVGElement.point and element.debug:                            
-                r = 15
-                et.SubElement(doc, 'circle', cx=str(pts[0][0]), cy=str(pts[0][1]), r=str(r), fill='rgb(255,0,0)')            
-        
-            
-        # debug lines first        
-        for element in self.elements: 
-            if element.debug:
-                stroke='rgb(100,100,100)'
-                stroke_width = '2; stroke-opacity:0.3'
-                
-                stroke = "stroke: %s; stroke-width: %s" % (stroke, stroke_width)
-                    
-                # shift points by canvas offset
-                pts = [(float(scale*(p[0]-center[0])), float(scale*(p[1]-center[1]))) for p in element.pts]
-                
-                # draw circle            
-                if element.type==SVGElement.circle:                            
-                    r = length(pts[0], pts[1])                
-                    et.SubElement(doc, 'circle', cx=str(pts[0][0]), cy=str(pts[0][1]), r=str(r), style=stroke, fill='none')
-                    
-                # draw line
-                if element.type==SVGElement.line:                                                
-                    et.SubElement(doc, 'line', x1=str(pts[0][0]), y1=str(pts[0][1]),x2=str(pts[1][0]), y2=str(pts[1][1]), style=stroke)
-                    
-                
-                # draw arc
-                if element.type==SVGElement.arc:                                
-                    r = length(pts[0], pts[1])                
-                    path = "M%f,%f A %f,%f 0 0,0 %f, %f" % (pts[0][0], pts[0][1], r,r, pts[1][0], pts[1][1])
-                    et.SubElement(doc, 'path', d=path, style=stroke, fill="none")
-                    
-        # other lines next
-        for element in self.elements: 
-            if not element.debug:
-                stroke='rgb(0,0,0)'
-                stroke_width = '10'
- 
-                stroke = "stroke: %s; stroke-width: %s" % (stroke, stroke_width)
-                # shift points by canvas offset
-                pts = [(float(scale*(p[0]-center[0])), float(scale*(p[1]-center[1]))) for p in element.pts]
-                
-                # draw circle            
-                if element.type==SVGElement.circle:                            
-                    r = length(pts[0], pts[1])                
-                    et.SubElement(doc, 'circle', cx=str(pts[0][0]), cy=str(pts[0][1]), r=str(r), style=stroke, fill='none')
-                
-                # draw points
-                if element.type==SVGElement.point:                            
-                    r = 15
-                    et.SubElement(doc, 'circle', cx=str(pts[0][0]), cy=str(pts[0][1]), r=str(r), fill='rgb(255,0,0)')            
-                
-                
-                # draw line
-                if element.type==SVGElement.line:                                                
-                    et.SubElement(doc, 'line', x1=str(pts[0][0]), y1=str(pts[0][1]),x2=str(pts[1][0]), y2=str(pts[1][1]), style=stroke)
-                    
-                # draw arc
-                if element.type==SVGElement.arc:                                
-                    r = length(pts[0], pts[1])                
-                    path = "M%f,%f A %f,%f 0 0,0 %f, %f" % (pts[0][0], pts[0][1], r,r, pts[1][0], pts[1][1])
-                    et.SubElement(doc, 'path', d=path, style=stroke, fill="none")
-
-        
-        # text last
-        for element in self.elements:         
-            pts = [(float(scale*(p[0]-center[0])), float(scale*(p[1]-center[1]))) for p in element.pts]
-            # draw text
-            if element.type==SVGElement.text:                                            
-                text = et.Element('text', x=str(pts[0][0]+20), y=str(pts[0][1]+20), fill='gray', style='font-family:Sans;font-size:72pt;text-anchor:center;dominant-baseline:middle')
-                
-                text.text = element.text
-                doc.append(text)
-         
-        # ElementTree 1.2 doesn't write the SVG file header errata, so do that manually
-        f = open('%s.svg' % filename, 'w')
-        f.write('<?xml version=\"1.0\" standalone=\"no\"?>\n')
-        f.write('<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\"\n')
-        f.write('\"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n')
-        f.write(et.tostring(doc))
-        f.close()
-        
+from geo import *
+from svg_output import *
+from tk_output import *
         
         
 class Geom:
@@ -499,24 +56,15 @@ class Nil:
         return False
         
     
-def quantize(pt):
-    """Quantize a point so that it falls exactly on a grid line"""
-    eps = 1e5
-    if isinstance(pt, Nil):
-        return pt
-    else:
-        x, y = pt
-        x = floor(x * eps+0.5)/float(eps)
-        y = floor(y * eps+0.5)/float(eps)
-        return (x,y)
         
     
 class GeomLang:
-    def __init__(self, code, filename, debug=False):
+    def __init__(self, code, filename, debug=False, interactive=False):
 
         # initialise stack
         self.stack = [(Rational(0),Rational(0)), (Rational(1),Rational(0))]
         self.dictionary = {}
+        self.interactive = interactive
         self.dictionaries = []
         self.continuation = {}
         self.continuations = []
@@ -526,6 +74,10 @@ class GeomLang:
                 
         # create the output function 
         self.output = SVGOutput()        
+        if self.interactive:
+            self.interactive_output = TKOutput()
+           
+            
         self.geoms = []
         
         for pt in self.stack:
@@ -797,18 +349,26 @@ class GeomLang:
                     self.push(v)
                         
     
-if __name__=="__main__":
-    if len(sys.argv)<2:
-        print "Usage: geomplusplus.py <file.geom> [-d]"
-    else:
-        filename = sys.argv[1]
-        debug = False
-        if len(sys.argv)>2 and sys.argv[2]=='-d':
-            debug = True
+def start_geom():
+        usage = "usage: %prog [options] file.geompp"        
+        parser = OptionParser(usage=usage)
+        parser.add_option("-d", "--debug", dest="debug", help="enable drawing of construction geometry, and label points", action="store_true", default=False)
+        parser.add_option("-i", "--interactive", dest="interactive", help="enable interactive drawing on a Tk canvas", action="store_true", default=False)
+        options, args = parser.parse_args()
+        
+        if len(args)!=1:
+            parser.print_help()
+            sys.exit(0)
+            
+        
+        filename = args[0]                
         base, ext = os.path.splitext(filename)
         file = open(sys.argv[1], "r").read()
-        g = GeomLang(file, base, debug=debug)
+        g = GeomLang(file, base, debug=options.debug, interactive=options.interactive)
         print "Wrote to %s.svg" % base
+        
+if __name__=="__main__":
+        start_geom()
                 
                 
                                
