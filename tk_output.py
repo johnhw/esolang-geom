@@ -1,4 +1,5 @@
 import sys, os, random
+from geomplusplus import Nil
 from Tkinter import *
 from geo import *
 
@@ -13,25 +14,25 @@ class TkObject:
     arc = 2
     point = 3
     
-    def __init__(self, t, p1, p2=None, p3=None, start=None, extent=None, fill="", outline="black", r=0.03):
+    def __init__(self, t, p1, p2=None, p3=None, start=None, extent=None, fill="", outline="black", r=0.02):
         self.t = t
         
         # create the bounding box
-        if t==oval:
-            r = distance(p1,p2)
+        if t==TkObject.oval:            
+            r = length(p1,p2)            
             self.bbox = [p1[0]-r, p1[0]+r, p1[1]-r, p1[1]+r]
-        if t==point:            
+        if t==TkObject.point:            
             self.bbox = [p1[0]-r, p1[0]+r, p1[1]-r, p1[1]+r]
-        if t==line or t==inf_line:
+        if t==TkObject.line or t==TkObject.inf_line:
             self.bbox = [p1[0], p2[0], p1[1], p2[1]]
-        if t==arc:
-            r = distance(p1,p2)
+        if t==TkObject.arc:
+            r = length(p1,p2)
             self.bbox = [p1[0]-r, p1[0]+r, p1[1]-r, p1[1]+r]                                
             
         self.p1 = p1
         self.p2 = p2
         self.p3 = p3
-        self.bbox = bbox
+        
         self.fill = fill
         self.outline = outline       
         self.start = start
@@ -40,11 +41,14 @@ class TkObject:
         
     def set_transform(self, transform, bbox):
         self.transform = transform
-        if self.t==inf_line:
-            self.bbox = get_bounded_inf_line(bbox, self.p1, self.p2)        
+        if self.t==TkObject.inf_line:
+            pts = get_bounded_inf_lines(bbox, self.p1, self.p2)        
+            if pts and len(pts)==2:                
+                self.bbox = [pts[0][0], pts[1][0], pts[0][1], pts[1][1]]
         self.screen_transform()        
                 
     def extents(self):
+        bbox = self.bbox
         xmin = min(bbox[0], bbox[1])
         xmax = max(bbox[0], bbox[1])
         ymin = min(bbox[2], bbox[3])
@@ -52,10 +56,13 @@ class TkObject:
         return [xmin,xmax,ymin,ymax]        
         
     def screen_transform(self):        
-        self.screen_bbox = [self.transform[2] * (self.bbox[0] - self.transform[0]), 
-        self.transform[2] * (self.bbox[1] - self.transform[0]), 
-        self.transform[3] * (self.bbox[2] - self.transform[1]), 
-        self.transform[3] * (self.bbox[3] - self.transform[1])]
+        w = 600
+        h = 400        
+        self.screen_bbox = [self.transform[2] * (self.bbox[0] - self.transform[0]) * (w/2)+w/2, 
+        self.transform[3] * (self.bbox[2] - self.transform[1])* (h/2)+h/2, 
+        self.transform[2] * (self.bbox[1] - self.transform[0])* (w/2)+w/2, 
+        self.transform[3] * (self.bbox[3] - self.transform[1])* (h/2)+h/2]
+        
         
     def __hash__(self):
         return self.uid
@@ -69,8 +76,8 @@ class TkObject:
         
 class TKOutput(object):
     def __init__(self, geom):
-        self.geom = geom
         
+        self.geom = geom
         self.root = Tk()
         self.canvas = Canvas(self.root, width=600, height=400, background="White")
         
@@ -81,7 +88,8 @@ class TKOutput(object):
         self.canvas.bind("<Button-2>", self.callback)        
         self.permanent = []
         self.transient = []
-        self.transform = [0,0,0.5,0.5]        
+        self.transient_points = []
+        self.transform = [0,0,0.5,0.5*(6/4.0)]        
         self.bbox = [-2,2,-2,2]
         self.canvas.pack()
         
@@ -94,18 +102,19 @@ class TKOutput(object):
         self.code_text.config(yscrollcommand=self.scrollbar.set)
         self.scrollbar.config(command=self.code_text.yview)
         self.code_text.pack(fill=BOTH)
-        text_frame.pack(fill=X)
-        self.update_code_text()        
+        text_frame.pack(fill=X)        
         self.paused = True
         self.tag_circle = None
         self.tag_point = None
         self.step = False
+        self.set_highlight(self.geom.code, [0,0])
+    
+    def start(self):
         self.update()
         mainloop()
-        
-    def update_code_text(self):
-        text = self.geom.code        
-        highlight = self.geom.current_highlight
+    
+    
+    def set_highlight(self, text, highlight):                
         self.code_text.tag_config("h", foreground="red")        
         self.code_text.config(state=NORMAL)
         self.code_text.delete(1.0, END)
@@ -115,11 +124,11 @@ class TKOutput(object):
         self.code_text.config(state=DISABLED)
     
     
-    def key(self, event):
-        
+    def key(self, event):        
         # pause / go
         if event.char=='p':
-            self.paused = not self.paused
+            self.paused = not self.paused            
+        # one step 
         if event.char=='s':
             self.step = True
             
@@ -128,8 +137,9 @@ class TKOutput(object):
         pass
         
     def point(self, p1):                
-        # draw a point
+        # draw a point        
         oval = TkObject(TkObject.point, p1, fill="black", outline="")
+                
         self.permanent.append(oval)                
         self.rescale()
                                                    
@@ -158,33 +168,33 @@ class TKOutput(object):
             
     def update_transients(self):
         if len(self.transient)>2:
-            del self.object_tk_mapping[self.transient[0]]
-            self.transient = self.transient[1:]
-            
-            
+            del self.object_tk_binding[self.transient[0]]
+            self.transient = self.transient[1:]                        
             self.rescale()
         
     def transient_circle(self, p1, p2):
-        # draw a temporary circle
+        # draw a temporary circle        
         oval = TkObject(TkObject.oval, p1, p2, fill="", outline="gray")
         self.transient.append(oval)
-        self.update_transients()
-                        
+        self.update_transients()                        
         
     def transient_inf_line(self, p1, p2):
         # draw an "infinite" line
         line = TkObject(TkObject.inf_line, p1, p2, fill="gray")
-        self.update(transients)
+        self.transient.append(line)
+        self.update_transients()
                         
         
     def rescale(self):
+        return
+        
         # rescale all all the objects
         objects = self.permanent
         xs = []
         ys = []
         # find the bounds of all objects
         for object in objects:
-            xmin,xmax,ymin,ymax = object.extents
+            xmin,xmax,ymin,ymax = object.extents()
             xs.append(xmin)
             xs.append(xmax)
             ys.append(ymin)
@@ -208,47 +218,52 @@ class TKOutput(object):
             
     
     def redraw(self):
-    
+        # redraw all objects        
         if self.tag_point!=self.geom.current_tag_point:
             self.tag_point = self.geom.current_tag_point           
             # draw circle around currently executing point
             if self.tag_circle:
                 self.canvas.delete(self.tag_circle)
-            if not isinstance(self.geom.current_tag_point, Nil):
+            if self.geom.current_tag_point:                
                 pt = TkObject(TkObject.point, self.geom.current_tag_point, r=0.2, fill="", outline="red")
                 pt.transform(self.transform, self.bbox)
                 self.tag_circle = self.canvas.create_oval(object.screen_bbox, fill=object.fill, outline=object.outline)
-                    
-        # redraw all objects        
+                            
         # first of all generate all objects that aren't drawn already
         objects = self.permanent + self.transient
-        for object in objects:
+        for object in objects:            
             object.set_transform(self.transform, self.bbox)
+            
             if not self.object_tk_binding.has_key(object):
                 # draw the new objects
                 if object.t == TkObject.line:
-                    tk_object = self.canvas.create_line(object.screen_bbox, fill=object.fill, outline=object.outline)
-                if object.t == TkObject.circle:
-                    tk_object = self.canvas.create_oval(object.screen_bbox, fill=object.fill, outline=object.outline)
+                    tk_object = self.canvas.create_line(object.screen_bbox, fill=object.fill)
+                if object.t == TkObject.inf_line:
+                    tk_object = self.canvas.create_line(object.screen_bbox, fill=object.fill)                   
+                if object.t == TkObject.oval:
+                    tk_object = self.canvas.create_oval(object.screen_bbox, fill=object.fill, outline=object.outline)                    
                 if object.t == TkObject.point:
                     tk_object = self.canvas.create_oval(object.screen_bbox, fill=object.fill, outline=object.outline)
                 if object.t == TkObject.arc:
-                    tk_object = self.canvas.create_arc(object.screen_bbox, start=object.start, extent=object.extent,fill=object.fill, outline=object.outline)                                
+                    tk_object = self.canvas.create_arc(object.screen_bbox, start=object.start, extent=object.extent,fill=object.fill, outline=object.outline)                                                                    
                 self.object_tk_binding[object] = tk_object
         
         # remove all objects that aren't on the lists
-        all_tk_objects = self.canvas.find_all()
+        all_tk_objects = list(self.canvas.find_all())        
         for object in self.object_tk_binding.keys():
-            tk_object = object_tk_binding[object]
+            tk_object = self.object_tk_binding[object]            
             if tk_object in all_tk_objects:
                 all_tk_objects.remove(tk_object)                
-        self.canvas.delete(all_tk_objects)
+        
+        
+        self.canvas.delete(tuple(all_tk_objects))
             
         
     # keep updating the screen / executing code
     def update(self):
-        if not self.paused or self.step:
+        self.redraw()
+        self.canvas.update_idletasks()
+        if not self.paused or self.step:            
             self.geom.step()
-            self.step = False
-            self.update_code_text()
+            self.step = False            
         self.root.after(100, self.update)

@@ -191,6 +191,7 @@ def line_inside(p1, p2, p3):
 def get_bounded_inf_lines(bbox, p1, p2, border=0.1):
     bboxscale = border
     
+    line = [p1,p2]
     y1 = bbox[2]-(bbox[3]-bbox[2])*bboxscale
     y2 =bbox[3]+(bbox[3]-bbox[2])*bboxscale
     x1= bbox[0]-(bbox[1]-bbox[0])*bboxscale

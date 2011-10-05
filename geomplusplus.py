@@ -110,19 +110,22 @@ class GeomLang:
         for pt in self.stack:
             if pt:
                 self.output.point(pt)
-                
-        
-        tokens = split_indices(self.code)
-        
-        if self.interactive:
+                        
+        tokens = split_indices(self.code)        
+        if self.interactive:                    
             # start the parser in another thread
-            self.condition = threading.Condition()
-            parse_thread = threading.Thread(target=self.parse, args=(tokens,),kwargs={"condition" : self.condition})
-            parse_thread.start()
             self.interactive_output = TKOutput(self)
-        else:
-            self.parse(tokens)
+            self.condition = threading.Condition()            
+            parse_thread = threading.Thread(target=self.parse, args=(tokens,),kwargs={"condition" : self.condition})                        
+            parse_thread.start()
+            for pt in self.stack:
+                if pt:                         
+                    self.interactive_output.point(pt)
+        
+            self.interactive_output.start()            
             
+        else:
+            self.parse(tokens)            
                 
         self.output.write(filename=filename)
         
@@ -178,8 +181,7 @@ class GeomLang:
         self.stack.append(pt)
         
         
-    def pop(self):
-        
+    def pop(self):        
         if len(self.stack)>0:
             p = self.stack.pop()
             if not symbolic:
@@ -194,19 +196,23 @@ class GeomLang:
         p1 = self.pop()
         p2 = self.pop()
         p3 = self.pop()
-        if p1 and p2 and p3:
-            
+        if p1 and p2 and p3:            
             if length(p1,p3)<self.eps:                                
                 self.output.circle(p1, p2, debug=False)
-                
-            elif length(p1,p2)<self.eps:
-                
+                if self.interactive:                
+                    self.interactive_output.circle(p1,p2)                        
+            elif length(p1,p2)<self.eps:                
                 self.output.line(p1, p3, debug=False)            
+                if self.interactive:                
+                    self.interactive_output.line(p1,p3)                        
             elif length(p1,p3)<self.eps and length(p1,p2)<self.eps:
-                self.output.point(p1, p3, debug=False)                        
+                self.output.point(p1, debug=False)                        
+                if self.interactive:                
+                    self.interactive_output.point(p1)        
             else:
                 self.output.arc(p1, p2, p3)
-                
+                if self.interactive:                
+                    self.interactive_output.arc(p1,p2,p3)
         
     def circle(self):
         # create, but don't draw, a circle
@@ -217,6 +223,8 @@ class GeomLang:
             self.intersect(g)
             if self.debug:
                 self.output.circle(p1, p2)
+            if self.interactive:                
+                self.interactive_output.transient_circle(p1,p2)
         
         
     def line(self):
@@ -227,6 +235,9 @@ class GeomLang:
             self.intersect(g)
             if self.debug:
                 self.output.inf_line(p1, p2)
+            if self.interactive:                
+                self.interactive_output.transient_inf_line(p1,p2)
+        
             
             
     def step(self):
@@ -234,19 +245,23 @@ class GeomLang:
         self.condition.notify()
         self.condition.release()
         
+        
     
     # parse the entire string
     def parse(self,tokens, condition=None):                
         while len(tokens)>0:            
             token,index = tokens.pop(0)
             
+                
             # wait for gui if we need to 
-            if condition:
+            if condition:                
                 condition.acquire()
                 condition.wait()
                 condition.release()
             
-            self.current_highlight = index
+            if self.interactive:                                    
+                self.interactive_output.set_highlight(self.code, index)
+            
             
             # circle
             if token=='@':
@@ -279,9 +294,9 @@ class GeomLang:
                         
                     if cnt==1 and token=='^':
                         p = self.pop()                        
-                        defn.append(p)
+                        defn.append((p, index))
                     else:
-                        defn.append(token)                    
+                        defn.append((token,index))                    
                 
                 self.dictionary[pt] = defn[0:-1]
                 self.push(pt)
@@ -313,6 +328,7 @@ class GeomLang:
                 self.current_tag_point = p1
             
                 code = self.dictionary.get(p1, [])
+                print code
                 
                 # preserve state
                 self.dictionaries.append(self.dictionary)                    
@@ -321,11 +337,11 @@ class GeomLang:
                 self.continuation = dict(self.continuation)                                                                        
                 
                 # replace with current continuation if there is one
-                code,context = self.continuation.get(p1, (code, (self.dictionary, self.contiunation)))
+                code,context = self.continuation.get(p1, (code, (self.dictionary, self.continuation)))
                 self.dictionary = context[0]
                 self.continuation = context[1]
                                 
-                continuation = self.parse(list(code))
+                continuation = self.parse(list(code), condition=condition)
                 
                 # restore state
                 self.dictionary = self.dictionaries.pop()                        
