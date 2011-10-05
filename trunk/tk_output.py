@@ -93,6 +93,9 @@ class TKOutput(object):
         self.bbox = [-2,2,-2,2]
         self.canvas.pack()
         
+        stack = Text(self.root, height=1)
+        stack.pack(fill=X)
+        
         text_frame = Frame(self.root)
         
         self.code_text = Text(text_frame)
@@ -112,8 +115,7 @@ class TKOutput(object):
     def start(self):
         self.update()
         mainloop()
-    
-    
+        
     def set_highlight(self, text, highlight):                
         self.code_text.tag_config("h", foreground="red")        
         self.code_text.config(state=NORMAL)
@@ -122,8 +124,7 @@ class TKOutput(object):
         self.code_text.insert(END, text[highlight[0]:highlight[1]], 'h')
         self.code_text.insert(END, text[highlight[1]:])        
         self.code_text.config(state=DISABLED)
-    
-    
+        
     def key(self, event):        
         # pause / go
         if event.char=='p':
@@ -131,15 +132,13 @@ class TKOutput(object):
         # one step 
         if event.char=='s':
             self.step = True
-            
-        
+                    
     def callback(self, event):
         pass
         
     def point(self, p1):                
         # draw a point        
-        oval = TkObject(TkObject.point, p1, fill="black", outline="")
-                
+        oval = TkObject(TkObject.point, p1, fill="black", outline="")                
         self.permanent.append(oval)                
         self.rescale()
                                                    
@@ -162,23 +161,23 @@ class TKOutput(object):
         v2 = sub(p1, p3)        
         a1 = atan2(v1[1], v1[0])
         a2 = atan2(v2[1], v2[0])
-        oval = TkObject(TkObject.arc, p1, p2, p3, fill="", outline="black", start=to_degrees(a1), end=to_degrees(a2))
+        oval = TkObject(TkObject.arc, p2, p3, p3, fill="", outline="black", start=to_degrees(a2), extent=to_degrees(a2-a1))
         self.permanent.append(oval)        
         self.rescale()
             
     def update_transients(self):
+        # delete old transients
         if len(self.transient)>2:
             if self.object_tk_binding.has_key(self.transient[0]):
                 del self.object_tk_binding[self.transient[0]]
-            self.transient = self.transient[1:]                        
+            self.transient = self.transient[1:]                                    
             self.rescale()
             
         if len(self.transient_points)>2:
             del self.object_tk_binding[self.transient_points[0]]
             self.transient_points = self.transient_points[1:]                                    
             self.rescale()
-            
-        
+                    
     def transient_circle(self, p1, p2):
         # draw a temporary circle        
         oval = TkObject(TkObject.oval, p1, p2, fill="", outline="lightblue")
@@ -197,11 +196,10 @@ class TKOutput(object):
             point = TkObject(TkObject.point, p, fill="red", r=0.02, outline="")
             self.point(p)
             self.transient_points.append(point)
-            self.update_transients()
-    
+            self.update_transients()    
         
     def rescale(self):
-        return
+        
         
         # rescale all all the objects
         objects = self.permanent
@@ -214,14 +212,16 @@ class TKOutput(object):
             xs.append(xmax)
             ys.append(ymin)
             ys.append(ymax)
-        minx = min(xs)
-        maxx = max(xs)
-        miny = min(ys)
-        maxy = max(ys)
+        minx = min(xs+[-2])
+        maxx = max(xs+[2])
+        miny = min(ys+[-2])
+        maxy = max(ys+[2])
         
         bbox = [minx,maxx,miny,maxy]
         transform = [-minx, -maxx, (maxx-minx), (maxy-miny)]
         eps = 1e-1
+        
+        
         
         # if bounding has changed significantly, redraw all objects
         if abs(self.bbox[0]-bbox[0])>eps or abs(self.bbox[1]-bbox[1])>eps or abs(self.bbox[2]-bbox[2])>eps or abs(self.bbox[3]-bbox[3])>eps:
@@ -260,7 +260,7 @@ class TKOutput(object):
                 if object.t == TkObject.point:
                     tk_object = self.canvas.create_oval(object.screen_bbox, fill=object.fill, outline=object.outline)
                 if object.t == TkObject.arc:
-                    tk_object = self.canvas.create_arc(object.screen_bbox, start=object.start, extent=object.extent,fill=object.fill, outline=object.outline)                                                                    
+                    tk_object = self.canvas.create_arc(object.screen_bbox, start=object.start, extent=object.extent,fill=object.fill, outline=object.outline, style="arc")                                                                    
                 self.object_tk_binding[object] = tk_object
         
         # remove all objects that aren't on the lists
@@ -276,7 +276,7 @@ class TKOutput(object):
         
     # keep updating the screen / executing code
     def update(self):
-        self.redraw()
+        #self.redraw()
         self.canvas.update_idletasks()
         if not self.paused or self.step:            
             self.geom.step()

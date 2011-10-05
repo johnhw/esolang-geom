@@ -1,5 +1,5 @@
 from xml.etree import ElementTree as et 
-
+from geo import *
 
 class SVGElement(object):
     circle = 0
