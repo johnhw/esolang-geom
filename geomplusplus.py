@@ -4,7 +4,7 @@
 
 import sys, os, random, threading
 from optparse import OptionParser
-   
+from geo import length   
 
 try:
     # use symbolic solver if it's available
@@ -330,9 +330,8 @@ class GeomLang:
             elif token=='*':
                 p1 = self.pop()
                 self.current_tag_point = p1
-            
-                code = self.dictionary.get(p1, [])
-                print code
+                       
+                code = self.dictionary.get(p1, [])                
                 
                 # preserve state
                 self.dictionaries.append(self.dictionary)                    
