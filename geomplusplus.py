@@ -82,14 +82,13 @@ def split_indices(text):
     if len(token)>0:
         indices.append((cur,end))
         tokens.append(token)                        
-    return zip(tokens, indices)
-            
-                       
+    return zip(tokens, indices)                                   
         
     
 class GeomLang:
     def __init__(self, code, filename, debug=False, interactive=False):
         # initialise stack
+
         self.stack = [(Rational(0),Rational(0)), (Rational(1),Rational(0))]
         self.dictionary = {}
         self.interactive = interactive
@@ -120,7 +119,7 @@ class GeomLang:
             parse_thread.start()
             for pt in self.stack:
                 if pt:                         
-                    self.interactive_output.point(pt)
+                    self.interactive_output.transient_point(pt)
         
             self.interactive_output.start()            
             
@@ -160,6 +159,8 @@ class GeomLang:
                 
             for intersection in intersections:                
                 self.output.point(intersection)
+                
+                
                 self.push(intersection)
             
             # fill any remaining gaps
@@ -178,6 +179,9 @@ class GeomLang:
     def push(self, pt):        
         if not symbolic:
             pt = quantize(pt)
+        
+        if self.interactive:
+            self.interactive_output.transient_point(pt)
         self.stack.append(pt)
         
         
