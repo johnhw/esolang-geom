@@ -58,10 +58,10 @@ class TkObject:
     def screen_transform(self):        
         w = 600
         h = 400        
-        self.screen_bbox = [self.transform[2] * (self.bbox[0] - self.transform[0]) * (w/2)+w/2, 
+        self.screen_bbox = [float(f) for f in [self.transform[2] * (self.bbox[0] - self.transform[0]) * (w/2)+w/2, 
         self.transform[3] * (self.bbox[2] - self.transform[1])* (h/2)+h/2, 
         self.transform[2] * (self.bbox[1] - self.transform[0])* (w/2)+w/2, 
-        self.transform[3] * (self.bbox[3] - self.transform[1])* (h/2)+h/2]
+        self.transform[3] * (self.bbox[3] - self.transform[1])* (h/2)+h/2]]
         
         
     def __hash__(self):
@@ -168,22 +168,37 @@ class TKOutput(object):
             
     def update_transients(self):
         if len(self.transient)>2:
-            del self.object_tk_binding[self.transient[0]]
+            if self.object_tk_binding.has_key(self.transient[0]):
+                del self.object_tk_binding[self.transient[0]]
             self.transient = self.transient[1:]                        
             self.rescale()
+            
+        if len(self.transient_points)>2:
+            del self.object_tk_binding[self.transient_points[0]]
+            self.transient_points = self.transient_points[1:]                                    
+            self.rescale()
+            
         
     def transient_circle(self, p1, p2):
         # draw a temporary circle        
-        oval = TkObject(TkObject.oval, p1, p2, fill="", outline="gray")
+        oval = TkObject(TkObject.oval, p1, p2, fill="", outline="lightblue")
         self.transient.append(oval)
         self.update_transients()                        
         
     def transient_inf_line(self, p1, p2):
         # draw an "infinite" line
-        line = TkObject(TkObject.inf_line, p1, p2, fill="gray")
+        line = TkObject(TkObject.inf_line, p1, p2, fill="lightblue")
         self.transient.append(line)
         self.update_transients()
-                        
+    
+    def transient_point(self, p):
+        # draw an "infinite" line
+        if p:
+            point = TkObject(TkObject.point, p, fill="red", r=0.02, outline="")
+            self.point(p)
+            self.transient_points.append(point)
+            self.update_transients()
+    
         
     def rescale(self):
         return
@@ -230,7 +245,7 @@ class TKOutput(object):
                 self.tag_circle = self.canvas.create_oval(object.screen_bbox, fill=object.fill, outline=object.outline)
                             
         # first of all generate all objects that aren't drawn already
-        objects = self.permanent + self.transient
+        objects = self.permanent + self.transient + self.transient_points
         for object in objects:            
             object.set_transform(self.transform, self.bbox)
             
@@ -255,8 +270,8 @@ class TKOutput(object):
             if tk_object in all_tk_objects:
                 all_tk_objects.remove(tk_object)                
         
-        
-        self.canvas.delete(tuple(all_tk_objects))
+        for object in all_tk_objects:
+            self.canvas.delete(object)
             
         
     # keep updating the screen / executing code
