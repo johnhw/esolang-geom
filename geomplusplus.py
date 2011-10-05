@@ -98,6 +98,7 @@ class GeomLang:
         self.current_tag_point = Nil()
         self.debug = debug
         self.eps = 1e-4
+        self.filename = filename
         
         self.code = code        
         # create the output function 
@@ -115,18 +116,16 @@ class GeomLang:
             # start the parser in another thread
             self.interactive_output = TKOutput(self)
             self.condition = threading.Condition()            
-            parse_thread = threading.Thread(target=self.parse, args=(tokens,),kwargs={"condition" : self.condition})                        
+            parse_thread = threading.Thread(target=self.do_parse, args=(tokens,),kwargs={"condition" : self.condition})                        
             parse_thread.start()
             for pt in self.stack:
                 if pt:                         
-                    self.interactive_output.transient_point(pt)
-        
-            self.interactive_output.start()            
-            
+                    self.interactive_output.transient_point(pt)        
+            self.interactive_output.start()                        
         else:
-            self.parse(tokens)            
-                
-        self.output.write(filename=filename)
+            self.do_parse(tokens)            
+        
+        
         
                
                     
@@ -250,12 +249,25 @@ class GeomLang:
         self.condition.release()
         
         
+    def get_string_stack(self):
+        stack_string = []
+        for elt in self.stack:
+                if isinstance(elt,tuple):
+                    stack_string.append("[%.02f, %.02f]" % (elt[0], elt[1]))
+                else:
+                    stack_string.append(str(elt))
+        stack_string.append("<<")
+        stack_string = " ".join(stack_string)
+        return stack_string
+    
+    def do_parse(self, tokens, condition=None):
+        self.parse(tokens, condition)
+        self.output.write(filename=self.filename)        
     
     # parse the entire string
     def parse(self,tokens, condition=None):                
         while len(tokens)>0:            
-            token,index = tokens.pop(0)
-            
+            token,index = tokens.pop(0)            
                 
             # wait for gui if we need to 
             if condition:                
@@ -264,7 +276,7 @@ class GeomLang:
                 condition.release()
             
             if self.interactive:                                    
-                self.interactive_output.set_highlight(self.code, index)
+                self.interactive_output.set_highlight(self.code, index, self.get_string_stack())
             
             
             # circle
@@ -368,13 +380,10 @@ class GeomLang:
             
             # print stack
             elif token=='.':                
+    
+                print self.get_string_stack()
                 
-                for elt in self.stack:
-                    if isinstance(elt,tuple):
-                        print "[%.02f, %.02f]" % (elt[0], elt[1])
-                    else:
-                        print elt,                    
-                print "<<"
+                
             
             # print dictionary
             elif token=='!':

@@ -91,10 +91,9 @@ class TKOutput(object):
         self.transient_points = []
         self.transform = [0,0,0.5,0.5*(6/4.0)]        
         self.bbox = [-2,2,-2,2]
-        self.canvas.pack()
-        
-        stack = Text(self.root, height=1)
-        stack.pack(fill=X)
+        self.canvas.pack()        
+        self.stack = Text(self.root, height=1)
+        self.stack.pack(fill=X)
         
         text_frame = Frame(self.root)
         
@@ -110,13 +109,19 @@ class TKOutput(object):
         self.tag_circle = None
         self.tag_point = None
         self.step = False
-        self.set_highlight(self.geom.code, [0,0])
+        self.set_highlight(self.geom.code, [0,0], "")
     
     def start(self):
         self.update()
         mainloop()
         
-    def set_highlight(self, text, highlight):                
+    def set_highlight(self, text, highlight, stack):                
+        
+        self.stack.config(state=NORMAL)
+        self.stack.delete(1.0, END)
+        self.stack.insert(END, stack)
+        self.stack.config(state=DISABLED)
+        
         self.code_text.tag_config("h", foreground="red")        
         self.code_text.config(state=NORMAL)
         self.code_text.delete(1.0, END)
