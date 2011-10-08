@@ -78,7 +78,7 @@ class TkObject:
         return [xmin,xmax,ymin,ymax]        
         
     def screen_transform(self):        
-        w = 600
+        w = 680
         h = 400        
         self.screen_bbox = [float(f) for f in [self.transform[2] * (self.bbox[0] - self.transform[0]) * (w/2)+w/2, 
         self.transform[3] * (self.bbox[2] - self.transform[1])* (h/2)+h/2, 
@@ -97,11 +97,12 @@ class TkObject:
         
         
 class TKOutput(object):
-    def __init__(self, geom):
+    def __init__(self, in_queue, out_queue):
         
-        self.geom = geom
+        self.in_queue = in_queue
+        self.out_queue = out_queue
         self.root = Tk()
-        self.canvas = Canvas(self.root, width=600, height=400, background="White")
+        self.canvas = Canvas(self.root, width=680, height=400, background="White")
         
         self.object_tk_binding = {}        
         self.canvas.focus_set()
@@ -140,12 +141,53 @@ class TKOutput(object):
         self.tag_point = None
         self.step = False
         self.terminated = False
-        self.set_highlight(self.geom.code, [0,0], "")
+        self.code = ""
+        self.highlight = [0,0]
+        self.stack_text = ""
+        
     
     def start(self):
+        self.read_queue()
         self.status.config(text="Paused")
         self.update()
         mainloop()
+        
+        
+    def read_queue(self):
+        while not self.in_queue.empty():
+            cmd = None
+            try:
+                cmd, val = self.in_queue.get(block=False)
+            except: 
+                pass
+                            
+            if cmd:
+                if cmd=="code":
+                    self.code = val
+                    self.set_highlight(self.code, self.highlight, self.stack_text)
+                if cmd=="stack":
+                    self.stack_text = val
+                    self.set_highlight(self.code, self.highlight, self.stack_text)
+                if cmd=="highlight":
+                    self.highlight = val
+                    self.set_highlight(self.code, self.highlight, self.stack_text)
+                if cmd=="point":
+                    self.point(val)                    
+                if cmd=="transient_point":
+                    self.transient_point(val)       
+                if cmd=="transient_circle":
+                    self.transient_circle(*val)       
+                if cmd=="transient_line":
+                    self.transient_inf_line(*val)       
+                if cmd=="line":
+                    self.line(*val)       
+                if cmd=="circle":
+                    self.circle(*val)       
+                if cmd=="arc":
+                    self.arc(*val)     
+                if cmd=="terminate":
+                    self.terminate()
+                
         
     def set_highlight(self, text, highlight, stack):                
         
@@ -281,7 +323,10 @@ class TKOutput(object):
         
         bbox = [minx,maxx,miny,maxy]
         
-        transform = [(minx+maxx)/2, (miny+maxy)/2, 2.0/(maxx-minx), (2*self.aspect)/(maxy-miny)]
+        
+        scale = max((maxx-minx), (maxy-miny))
+        
+        transform = [(minx+maxx)/2, (miny+maxy)/2, 2.0/scale, (2*self.aspect)/scale]
         eps = 1e-1
         
         
@@ -299,15 +344,15 @@ class TKOutput(object):
     
     def redraw(self):
         # redraw all objects        
-        if self.tag_point!=self.geom.current_tag_point:
-            self.tag_point = self.geom.current_tag_point           
-            # draw circle around currently executing point
-            if self.tag_circle:
-                self.canvas.delete(self.tag_circle)
-            if self.geom.current_tag_point:                
-                pt = TkObject(TkObject.point, self.geom.current_tag_point, r=0.2, fill="", outline="red")
-                pt.transform(self.transform, self.bbox)
-                self.tag_circle = self.canvas.create_oval(object.screen_bbox, fill=object.fill, outline=object.outline)
+        # if self.tag_point!=self.geom.current_tag_point:
+            # self.tag_point = self.geom.current_tag_point           
+            ##draw circle around currently executing point
+            # if self.tag_circle:
+                # self.canvas.delete(self.tag_circle)
+            # if self.geom.current_tag_point:                
+                # pt = TkObject(TkObject.point, self.geom.current_tag_point, r=0.2, fill="", outline="red")
+                # pt.transform(self.transform, self.bbox)
+                # self.tag_circle = self.canvas.create_oval(object.screen_bbox, fill=object.fill, outline=object.outline)
                             
         # first of all generate all objects that aren't drawn already
         objects = self.permanent + self.transient + self.transient_points
@@ -344,7 +389,8 @@ class TKOutput(object):
         #self.redraw()
         self.canvas.update_idletasks()
         if not self.paused or self.step:            
-            self.geom.step()
-            self.step = False            
-        self.set_highlight(self.geom.code, self.geom.highlight, self.geom.string_stack)
+            self.out_queue.put("step", block=False)
+            self.step = False         
+        self.read_queue()
+        
         self.root.after(100, self.update)
