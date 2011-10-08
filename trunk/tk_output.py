@@ -95,9 +95,13 @@ class TKOutput(object):
         self.stack = Text(self.root, height=1)
         self.stack.pack(fill=X)
         
+        self.status = Label(self.root, text="Initialising", justify="left")
+        
+        
+        
         text_frame = Frame(self.root)
         
-        self.code_text = Text(text_frame)
+        self.code_text = Text(text_frame, height=16)
         
         self.scrollbar = Scrollbar(self.root)
         self.scrollbar.pack(side=RIGHT, fill=Y)
@@ -105,13 +109,16 @@ class TKOutput(object):
         self.scrollbar.config(command=self.code_text.yview)
         self.code_text.pack(fill=BOTH)
         text_frame.pack(fill=X)        
+        self.status.pack()
         self.paused = True
         self.tag_circle = None
         self.tag_point = None
         self.step = False
+        self.terminated = False
         self.set_highlight(self.geom.code, [0,0], "")
     
     def start(self):
+        self.status.config(text="Paused")
         self.update()
         mainloop()
         
@@ -122,22 +129,39 @@ class TKOutput(object):
         self.stack.insert(END, stack)
         self.stack.config(state=DISABLED)
         
+        
         self.code_text.tag_config("h", foreground="red")        
         self.code_text.config(state=NORMAL)
         self.code_text.delete(1.0, END)
         self.code_text.insert(END, text[0:highlight[0]])
+        
         self.code_text.insert(END, text[highlight[0]:highlight[1]], 'h')
+        self.code_text.see(END)
         self.code_text.insert(END, text[highlight[1]:])        
+        
+        
         self.code_text.config(state=DISABLED)
         
-    def key(self, event):        
-        # pause / go
-        if event.char=='p':
-            self.paused = not self.paused            
-        # one step 
-        if event.char=='s':
-            self.step = True
-                    
+    def key(self, event):    
+        if not self.terminated:        
+            # pause / go
+            if event.char=='p':
+                self.paused = not self.paused    
+                if self.paused:
+                    self.status.config(text="Paused")
+                else:
+                    self.status.config(text="Running")
+            # one step 
+            if event.char=='s':
+                self.step = True
+                self.status.config(text="Step")
+            
+    def terminate(self):
+        self.status.config(text="Terminated")
+        self.terminated = True
+        self.clear_transients()
+    
+    
     def callback(self, event):
         pass
         
@@ -170,6 +194,19 @@ class TKOutput(object):
         self.permanent.append(oval)        
         self.rescale()
             
+    def clear_transients(self):
+        for transient in self.transient:
+            if self.object_tk_binding.has_key(self.transient[0]):
+                del self.object_tk_binding[transient]
+        for transient in self.transient_points:
+            if self.object_tk_binding.has_key(transient):
+                del self.object_tk_binding[transient]
+        self.transient = []
+        self.transient_points = []
+        self.rescale()
+        self.redraw()
+            
+    
     def update_transients(self):
         # delete old transients
         if len(self.transient)>2:

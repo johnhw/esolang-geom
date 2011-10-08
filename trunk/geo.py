@@ -229,14 +229,4 @@ def get_bounded_inf_lines(bbox, p1, p2, border=0.1):
         
     return pts
 
-def quantize(pt):
-    """Quantize a point so that it falls exactly on a grid line"""
-    eps = 1e5
-    if isinstance(pt, Nil):
-        return pt
-    else:
-        x, y = pt
-        x = floor(x * eps+0.5)/float(eps)
-        y = floor(y * eps+0.5)/float(eps)
-        return (x,y)
     
