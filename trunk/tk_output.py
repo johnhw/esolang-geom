@@ -14,7 +14,7 @@ class TkObject:
     arc = 2
     point = 3
     
-    def __init__(self, t, p1, p2=None, p3=None, start=None, extent=None, fill="", outline="black", r=0.02):
+    def __init__(self, t, p1, p2=None, p3=None,  fill="", outline="black", r=0.02):
         self.t = t
         
         # create the bounding box
@@ -26,8 +26,32 @@ class TkObject:
         if t==TkObject.line or t==TkObject.inf_line:
             self.bbox = [p1[0], p2[0], p1[1], p2[1]]
         if t==TkObject.arc:
-            r = length(p1,p2)
-            self.bbox = [p1[0]-r, p1[0]+r, p1[1]-r, p1[1]+r]                                
+            r = length(p1,p2)     
+            
+            v1 = sub(p2, p3)
+            v2 = sub(p2, p1)        
+            a1 = -atan2(v1[1], v1[0])
+            a2 = -atan2(v2[1], v2[0])
+            if a1<0:
+                a1 += 2*pi
+            if a2<0:
+                a2 += 2*pi
+                        
+            a1 = (a1/pi) * 180.0
+            a2 = (a2/pi) * 180.0
+            if a1>a2:
+                a1, a2 = a2,a1
+            
+            if abs(a1-a2)>180:
+                t = a1
+                self.start = a2
+                self.extent= (t+360)-a2
+            else:
+                self.start = a1
+                self.extent = a2-a1            
+            
+            
+            self.bbox = [p2[0]-r, p2[0]+r, p2[1]-r, p2[1]+r]                                
             
         self.p1 = p1
         self.p2 = p2
@@ -35,8 +59,6 @@ class TkObject:
         
         self.fill = fill
         self.outline = outline       
-        self.start = start
-        self.extent = extent
         self.uid = random.getrandbits(64)
         
     def set_transform(self, transform, bbox):
@@ -89,7 +111,10 @@ class TKOutput(object):
         self.permanent = []
         self.transient = []
         self.transient_points = []
-        self.transform = [0,0,0.5,0.5*(6/4.0)]        
+        
+        
+        self.aspect = float(self.canvas.config()["width"][-1])/float(self.canvas.config()["height"][-1])
+        self.transform = [0,0,0.5,0.5*self.aspect]        
         self.bbox = [-2,2,-2,2]
         self.canvas.pack()        
         self.stack = Text(self.root, height=1)
@@ -185,12 +210,7 @@ class TKOutput(object):
                 
     def arc(self, p1, p2, p3):
         # draw an arc
-        l = length(p1, p2)
-        v1 = sub(p1, p2)
-        v2 = sub(p1, p3)        
-        a1 = atan2(v1[1], v1[0])
-        a2 = atan2(v2[1], v2[0])
-        oval = TkObject(TkObject.arc, p2, p3, p3, fill="", outline="black", start=to_degrees(a2), extent=to_degrees(a2-a1))
+        oval = TkObject(TkObject.arc, p1, p2, p3, fill="", outline="black")
         self.permanent.append(oval)        
         self.rescale()
             
@@ -260,16 +280,19 @@ class TKOutput(object):
         maxy = max(ys+[2])
         
         bbox = [minx,maxx,miny,maxy]
-        transform = [-minx, -maxx, (maxx-minx), (maxy-miny)]
+        
+        transform = [(minx+maxx)/2, (miny+maxy)/2, 2.0/(maxx-minx), (2*self.aspect)/(maxy-miny)]
         eps = 1e-1
         
         
         
         # if bounding has changed significantly, redraw all objects
         if abs(self.bbox[0]-bbox[0])>eps or abs(self.bbox[1]-bbox[1])>eps or abs(self.bbox[2]-bbox[2])>eps or abs(self.bbox[3]-bbox[3])>eps:
+            print bbox, transform
             self.bbox = bbox
             self.transform = transform
             self.object_tk_binding = {}
+            pass
             
         self.redraw()
             
@@ -323,4 +346,5 @@ class TKOutput(object):
         if not self.paused or self.step:            
             self.geom.step()
             self.step = False            
+        self.set_highlight(self.geom.code, self.geom.highlight, self.geom.string_stack)
         self.root.after(100, self.update)

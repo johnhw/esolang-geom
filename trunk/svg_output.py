@@ -56,8 +56,7 @@ class SVGOutput(object):
             a1 += 2*pi
         if a2<0:
             a2 += 2*pi
-            
-        
+                    
         a1 = (a1/pi) * 180.0
         a2 = (a2/pi) * 180.0
         
@@ -211,11 +210,6 @@ class SVGOutput(object):
                     ex = cx + l*cos((element.angles[1]/180.0) * pi+offset)
                     ey = cy - l*sin((element.angles[1]/180.0) * pi+offset)
                                         
-                    
-                    
-                    
-                    
-                    print element.angles
                     
                     d =  element.angles[0] - element.angles[1]
                     if abs(d)>180:
