@@ -115,7 +115,10 @@ class GeomLang:
         self.code = code        
         # create the output function 
         self.output = SVGOutput()                
-        self.current_highlight = [0,0]               
+        self.highlight = [0,0]
+        self.string_stack = ""
+            
+            
             
         self.geoms = []
         
@@ -128,7 +131,8 @@ class GeomLang:
             # start the parser in another thread
             self.interactive_output = TKOutput(self)
             self.condition = threading.Condition()            
-            parse_thread = threading.Thread(target=self.do_parse, args=(tokens,),kwargs={"condition" : self.condition})                        
+            self.condition2 = threading.Condition()            
+            parse_thread = threading.Thread(target=self.do_parse, args=(tokens,),kwargs={"condition" : self.condition, "condition2" : self.condition2})                        
             parse_thread.start()
             for pt in self.stack:
                 if pt:                         
@@ -255,6 +259,9 @@ class GeomLang:
         self.condition.acquire()
         self.condition.notify()
         self.condition.release()
+        self.condition2.acquire()
+        self.condition2.wait()
+        self.condition2.release()
         
         
     def get_string_stack(self):
@@ -268,38 +275,51 @@ class GeomLang:
         stack_string = " ".join(stack_string)
         return stack_string
     
-    def do_parse(self, tokens, condition=None):
-        self.parse(tokens, condition)
+    def do_parse(self, tokens, condition=None, condition2=None):
+        self.parse(tokens, condition, condition2)
         self.output.write(filename=self.filename)        
         if self.interactive:
             self.interactive_output.terminate()
     
+    
+    
     # parse the entire string
-    def parse(self,tokens, condition=None):                
+    def parse(self,tokens, condition=None, condition2=None):                
+    
+        def release():
+            condition2.acquire()
+            condition2.notify()
+            condition2.release()
+        
+        
         while len(tokens)>0:            
             token,index = tokens.pop(0)            
-                
+            
+            
             # wait for gui if we need to 
             if condition:                
                 condition.acquire()
                 condition.wait()
                 condition.release()
-            
-            if self.interactive:                                    
-                self.interactive_output.set_highlight(self.code, index, self.get_string_stack())
+                                                        
+            self.highlight = index
+            self.string_stack = self.get_string_stack()
             
             
             # circle
-            if token=='@':
+            if token=='@':               
                self.circle()
+               
                               
             # line
             elif token=='/':
                 self.line()
+                
                  
             # raw token
             elif isinstance(token, (Nil, tuple)):
                 self.push(token)
+                
              
             # define
             elif token=='(':                 
@@ -326,7 +346,7 @@ class GeomLang:
                 
                 self.dictionary[pt] = defn[0:-1]
                 self.push(pt)
-            
+                
                 
             # variable
             elif token=='>':               
@@ -336,6 +356,7 @@ class GeomLang:
                 self.dictionary[name] = p1
                 if self.debug and p1:
                     self.output.text(p1, name)
+                
                 
             # conditional
             elif token=='?':               
@@ -347,6 +368,7 @@ class GeomLang:
                     self.push(p1)
                 else:
                     self.push(p2)
+                
                                                  
             
             elif token=='*':
@@ -365,7 +387,8 @@ class GeomLang:
                 code,context = self.continuation.get(p1, (code, (self.dictionary, self.continuation)))
                 self.dictionary = context[0]
                 self.continuation = context[1]
-                                
+                
+                
                 continuation = self.parse(list(code), condition=condition)
                 
                 # restore state
@@ -378,7 +401,7 @@ class GeomLang:
                 else:
                     if self.continuation.has_key(p1):
                         del self.continuation[p1] 
-                    
+                
             # draw 
             elif token=='-':              
                 self.draw_arc()
@@ -390,7 +413,7 @@ class GeomLang:
             
             # print stack
             elif token=='.':                
-    
+   
                 print self.get_string_stack()
                 
                 
@@ -408,6 +431,7 @@ class GeomLang:
                 print "--- Continuations ---"
                 for key in self.continuation:
                     print "%s : %s" % (key, self.continuation[key])
+                
                 
                 
             # print string
@@ -434,6 +458,8 @@ class GeomLang:
                 v = self.dictionary.get(token, None)                                
                 if v!=None:                    
                     self.push(v)
+                
+            release()
         
                         
     
