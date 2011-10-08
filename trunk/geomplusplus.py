@@ -2,7 +2,7 @@
 ## J. Williamson 2011
 ## Distributed in the public domain.
 
-import sys, os, random, threading
+import sys, os, random, threading, Queue
 from optparse import OptionParser
 from geo import length   
 from math import floor
@@ -129,15 +129,18 @@ class GeomLang:
         tokens = split_indices(self.code)        
         if self.interactive:                    
             # start the parser in another thread
-            self.interactive_output = TKOutput(self)
-            self.condition = threading.Condition()            
-            self.condition2 = threading.Condition()            
-            parse_thread = threading.Thread(target=self.do_parse, args=(tokens,),kwargs={"condition" : self.condition, "condition2" : self.condition2})                        
-            parse_thread.start()
+            
+            in_queue = Queue.Queue()            
+            out_queue = Queue.Queue()            
+            interactive_output = TKOutput(out_queue, in_queue)
+            out_queue.put(("code", self.code), block=False)
+            parse_thread = threading.Thread(target=self.do_parse, args=(tokens,),kwargs={"in_queue" : in_queue, "out_queue":out_queue})                        
+            
             for pt in self.stack:
                 if pt:                         
-                    self.interactive_output.transient_point(pt)        
-            self.interactive_output.start()                        
+                    interactive_output.transient_point(pt)        
+            parse_thread.start()
+            interactive_output.start()                        
         else:
             self.do_parse(tokens)            
         
@@ -192,7 +195,7 @@ class GeomLang:
             pt = quantize(pt)
         
         if self.interactive:
-            self.interactive_output.transient_point(pt)
+            self.out_queue.put(("transient_point", (pt)), block=False)
         self.stack.append(pt)
         
         
@@ -215,19 +218,23 @@ class GeomLang:
             if length(p1,p3)<self.eps:                                
                 self.output.circle(p1, p2, debug=False)
                 if self.interactive:                
-                    self.interactive_output.circle(p1,p2)                        
+                    self.out_queue.put(("circle", (p1,p2)), block=False)           
             elif length(p1,p2)<self.eps:                
                 self.output.line(p1, p3, debug=False)            
                 if self.interactive:                
-                    self.interactive_output.line(p1,p3)                        
+                    self.out_queue.put(("line", (p1,p2)), block=False)
+                    
+                        
             elif length(p1,p3)<self.eps and length(p1,p2)<self.eps:
                 self.output.point(p1, debug=False)                        
                 if self.interactive:                
-                    self.interactive_output.point(p1)        
+                    self.out_queue.put(("point", (p1)), block=False)
+                    
             else:
                 self.output.arc(p1, p2, p3)
                 if self.interactive:                
-                    self.interactive_output.arc(p1,p2,p3)
+                    self.out_queue.put(("arc", (p1,p2,p3)), block=False)
+                    
         
     def circle(self):
         # create, but don't draw, a circle
@@ -239,7 +246,8 @@ class GeomLang:
             if self.debug:
                 self.output.circle(p1, p2)
             if self.interactive:                
-                self.interactive_output.transient_circle(p1,p2)
+                self.out_queue.put(("transient_circle", (p1,p2)), block=False)
+                
         
         
     def line(self):
@@ -251,17 +259,10 @@ class GeomLang:
             if self.debug:
                 self.output.inf_line(p1, p2)
             if self.interactive:                
-                self.interactive_output.transient_inf_line(p1,p2)
+                self.out_queue.put(("transient_line", (p1,p2)), block=False)
         
             
             
-    def step(self):
-        self.condition.acquire()
-        self.condition.notify()
-        self.condition.release()
-        self.condition2.acquire()
-        self.condition2.wait()
-        self.condition2.release()
         
         
     def get_string_stack(self):
@@ -275,51 +276,44 @@ class GeomLang:
         stack_string = " ".join(stack_string)
         return stack_string
     
-    def do_parse(self, tokens, condition=None, condition2=None):
-        self.parse(tokens, condition, condition2)
-        self.output.write(filename=self.filename)        
+    def do_parse(self, tokens,in_queue=None,out_queue=None):
+        self.out_queue = out_queue
+        self.parse(tokens, in_queue, out_queue)
+        self.output.write(filename=self.filename)      
+        
         if self.interactive:
-            self.interactive_output.terminate()
-    
-    
-    
+            self.out_queue.put(("terminate", ()), block=False)
+            
+            
     # parse the entire string
-    def parse(self,tokens, condition=None, condition2=None):                
+    def parse(self,tokens, in_queue=None, out_queue=None):                
     
-        def release():
-            condition2.acquire()
-            condition2.notify()
-            condition2.release()
-        
-        
+
         while len(tokens)>0:            
             token,index = tokens.pop(0)            
-            
+                
+                
+            self.out_queue.put(("highlight", index), block=False)
+            self.out_queue.put(("stack", self.get_string_stack()), block=False)
             
             # wait for gui if we need to 
-            if condition:                
-                condition.acquire()
-                condition.wait()
-                condition.release()
-                                                        
+            if in_queue:
+                in_queue.get()
+                
             self.highlight = index
-            self.string_stack = self.get_string_stack()
-            
+            self.string_stack = self.get_string_stack()            
             
             # circle
-            if token=='@':               
+            if token=='@':
                self.circle()
-               
                               
             # line
             elif token=='/':
                 self.line()
-                
                  
             # raw token
             elif isinstance(token, (Nil, tuple)):
                 self.push(token)
-                
              
             # define
             elif token=='(':                 
@@ -346,7 +340,7 @@ class GeomLang:
                 
                 self.dictionary[pt] = defn[0:-1]
                 self.push(pt)
-                
+            
                 
             # variable
             elif token=='>':               
@@ -356,7 +350,6 @@ class GeomLang:
                 self.dictionary[name] = p1
                 if self.debug and p1:
                     self.output.text(p1, name)
-                
                 
             # conditional
             elif token=='?':               
@@ -368,7 +361,6 @@ class GeomLang:
                     self.push(p1)
                 else:
                     self.push(p2)
-                
                                                  
             
             elif token=='*':
@@ -401,7 +393,7 @@ class GeomLang:
                 else:
                     if self.continuation.has_key(p1):
                         del self.continuation[p1] 
-                
+                    
             # draw 
             elif token=='-':              
                 self.draw_arc()
@@ -413,7 +405,7 @@ class GeomLang:
             
             # print stack
             elif token=='.':                
-   
+    
                 print self.get_string_stack()
                 
                 
@@ -431,7 +423,6 @@ class GeomLang:
                 print "--- Continuations ---"
                 for key in self.continuation:
                     print "%s : %s" % (key, self.continuation[key])
-                
                 
                 
             # print string
@@ -459,7 +450,7 @@ class GeomLang:
                 if v!=None:                    
                     self.push(v)
                 
-            release()
+                
         
                         
     
