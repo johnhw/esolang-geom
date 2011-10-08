@@ -1,5 +1,6 @@
 from xml.etree import ElementTree as et 
 from geo import *
+from math import cos,sin,pi
 
 class SVGElement(object):
     circle = 0
@@ -7,11 +8,12 @@ class SVGElement(object):
     text = 2
     arc = 3
     point = 4
-    def __init__(self, type, pts, debug=False, text=""):
+    def __init__(self, type, pts, debug=False, text="", angles=None):
         self.type = type
         self.pts = pts
         self.text = text
         self.debug = debug
+        self.angles = angles
 
 class SVGOutput(object):
     def __init__(self):
@@ -44,13 +46,22 @@ class SVGOutput(object):
         
     def arc(self, p1, p2, p3):
         l = length(p1, p2)
-        v1 = sub(p1, p2)
-        v2 = sub(p1, p3)
         
-        a1 = atan2(v1[1], v1[0])
-        a2 = atan2(v2[1], v2[0])
+        v1 = sub(p2, p3)
+        v2 = sub(p2, p1)
         
-        self.elements.append(SVGElement(type=SVGElement.arc, pts=[p1, p2], debug=False))
+        a1 = atan2(v1[0], v1[1])
+        a2 = atan2(v2[0], v2[1])
+        if a1<0:
+            a1 += 2*pi
+        if a2<0:
+            a2 += 2*pi
+            
+        
+        a1 = (a1/pi) * 180.0
+        a2 = (a2/pi) * 180.0
+        
+        self.elements.append(SVGElement(type=SVGElement.arc, pts=[p1, p2, p3],  angles=[a1,a2],debug=False))
                 
         
         
@@ -143,8 +154,8 @@ class SVGOutput(object):
         # debug lines first        
         for element in self.elements: 
             if element.debug:
-                stroke='rgb(100,100,100)'
-                stroke_width = '2; stroke-opacity:0.3'
+                stroke='rgb(0,0,0)'
+                stroke_width = '6; stroke-opacity:0.4'
                 
                 stroke = "stroke: %s; stroke-width: %s" % (stroke, stroke_width)
                     
@@ -161,11 +172,6 @@ class SVGOutput(object):
                     et.SubElement(doc, 'line', x1=str(pts[0][0]), y1=str(pts[0][1]),x2=str(pts[1][0]), y2=str(pts[1][1]), style=stroke)
                     
                 
-                # draw arc
-                if element.type==SVGElement.arc:                                
-                    r = length(pts[0], pts[1])                
-                    path = "M%f,%f A %f,%f 0 0,0 %f, %f" % (pts[0][0], pts[0][1], r,r, pts[1][0], pts[1][1])
-                    et.SubElement(doc, 'path', d=path, style=stroke, fill="none")
                     
         # other lines next
         for element in self.elements: 
@@ -194,8 +200,32 @@ class SVGOutput(object):
                     
                 # draw arc
                 if element.type==SVGElement.arc:                                
-                    r = length(pts[0], pts[1])                
-                    path = "M%f,%f A %f,%f 0 0,0 %f, %f" % (pts[0][0], pts[0][1], r,r, pts[1][0], pts[1][1])
+                    
+                    cx = pts[1][0]
+                    cy = pts[1][1]
+                    l = length(pts[1], pts[0])
+                    
+                    offset = - pi/2
+                    sx = cx + l*cos((element.angles[0]/180.0) * pi+offset)
+                    sy = cy - l*sin((element.angles[0]/180.0) * pi+offset)
+                    ex = cx + l*cos((element.angles[1]/180.0) * pi+offset)
+                    ey = cy - l*sin((element.angles[1]/180.0) * pi+offset)
+                                        
+                    
+                    
+                    
+                    
+                    print element.angles
+                    
+                    d =  element.angles[0] - element.angles[1]
+                    if abs(d)>180:
+                        d = -d
+                        
+                    if d<0: 
+                        path = "M%f,%f A %f,%f 0 %d,0 %f, %f" % (sx,sy,l,l,0,ex,ey)
+                    else:
+                        path = "M%f,%f A %f,%f 0 %d,1 %f, %f" % (sx,sy,l,l,0,ex,ey)
+                    
                     et.SubElement(doc, 'path', d=path, style=stroke, fill="none")
 
         

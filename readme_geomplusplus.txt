@@ -6,7 +6,6 @@ Geom++ has a stack, which contains points or nils, a dictionary, which maps toke
 
 The implementation uses exact symbolic solving (when SymPy is installed) and thus suffers no accuracy loss from repeated operations.
 
-
 --- Running
 
 Make sure you have Python installed. Install SymPy (http://sympy.org) if you want exact algebraic solving. Then:
@@ -19,6 +18,13 @@ If you want to turn on drawing of all construction lines and
 labelling of points, you can do:
 
 python geomplusplus.py file.gpp -d
+
+Interactive mode can be enabled with -i:
+
+python geomplusplus.py file.gpp -i
+
+In interactive mode, pressing "s" single-steps through the code and "p" pauses/resumes the execution of code.
+
 
 --- Operators
 

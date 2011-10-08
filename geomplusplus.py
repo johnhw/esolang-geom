@@ -5,6 +5,7 @@
 import sys, os, random, threading
 from optparse import OptionParser
 from geo import length   
+from math import floor
 
 try:
     # use symbolic solver if it's available
@@ -54,7 +55,18 @@ class Nil:
         
     def __nonzero__(self):
         return False
-        
+
+
+def quantize(pt):
+    """Quantize a point so that it falls exactly on a grid line"""
+    eps = 1e5
+    if isinstance(pt, Nil):
+        return pt
+    else:
+        x, y = pt
+        x = floor(x * eps+0.5)/float(eps)
+        y = floor(y * eps+0.5)/float(eps)
+        return (x,y)        
     
         
 def split_indices(text):
@@ -125,8 +137,6 @@ class GeomLang:
         else:
             self.do_parse(tokens)            
         
-        
-        
                
                     
     # compute the intersection of the last two geometric operations
@@ -158,8 +168,6 @@ class GeomLang:
                 
             for intersection in intersections:                
                 self.output.point(intersection)
-                
-                
                 self.push(intersection)
             
             # fill any remaining gaps
@@ -232,7 +240,7 @@ class GeomLang:
         
     def line(self):
         p1 = self.pop()
-        p2 = self.pop()        
+        p2 = self.pop()                
         if p1 and p2:
             g = Geom(Geom.line, p1, p2)        
             self.intersect(g)
@@ -263,6 +271,8 @@ class GeomLang:
     def do_parse(self, tokens, condition=None):
         self.parse(tokens, condition)
         self.output.write(filename=self.filename)        
+        if self.interactive:
+            self.interactive_output.terminate()
     
     # parse the entire string
     def parse(self,tokens, condition=None):                
